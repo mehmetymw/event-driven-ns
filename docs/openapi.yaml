@@ -1,0 +1,517 @@
+openapi: 3.0.3
+info:
+  title: Event-Driven Notification System API
+  description: Scalable notification system that processes and delivers messages through SMS, Email, and Push channels with priority queues, retry logic, and real-time status tracking.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /api/v1/notifications:
+    post:
+      tags: [Notifications]
+      summary: Create a notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationRequest'
+      responses:
+        '201':
+          description: Notification created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Notifications]
+      summary: List notifications with filters and pagination
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, scheduled, processing, delivered, failed, cancelled]
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [sms, email, push]
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationResponse'
+                  next_cursor:
+                    type: string
+                    nullable: true
+
+  /api/v1/notifications/batch:
+    post:
+      tags: [Notifications]
+      summary: Create a batch of notifications (up to 1000)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBatchRequest'
+      responses:
+        '201':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateBatchResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/notifications/{id}:
+    get:
+      tags: [Notifications]
+      summary: Get notification by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/notifications/{id}/cancel:
+    patch:
+      tags: [Notifications]
+      summary: Cancel a pending or scheduled notification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: cancelled
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/batches/{id}:
+    get:
+      tags: [Batches]
+      summary: Get batch status with counts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Batch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/templates:
+    post:
+      tags: [Templates]
+      summary: Create a message template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Templates]
+      summary: List all templates
+      responses:
+        '200':
+          description: List of templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TemplateResponse'
+
+  /api/v1/templates/{id}:
+    get:
+      tags: [Templates]
+      summary: Get template by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Template details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/metrics:
+    get:
+      tags: [Observability]
+      summary: Real-time metrics (queue depth, success/failure rates, latency)
+      responses:
+        '200':
+          description: Metrics snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSnapshot'
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe (checks database and Redis)
+      responses:
+        '200':
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  checks:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                      redis:
+                        type: string
+        '503':
+          description: One or more dependencies unhealthy
+
+  /ws:
+    get:
+      tags: [WebSocket]
+      summary: WebSocket endpoint for real-time notification status updates
+      description: |
+        Connect via WebSocket to receive real-time status updates.
+        Messages are JSON objects with notification_id, status, and timestamp.
+      responses:
+        '101':
+          description: WebSocket upgrade
+
+components:
+  schemas:
+    CreateNotificationRequest:
+      type: object
+      required: [channel, recipient, content, priority]
+      properties:
+        channel:
+          type: string
+          enum: [sms, email, push]
+        recipient:
+          type: string
+          description: "SMS: E.164 format, Email: valid email, Push: device token"
+          example: "+905530050594"
+        content:
+          type: string
+          description: "SMS max 160, Email max 10000, Push max 4096 characters"
+          example: "Your verification code is 1234"
+        priority:
+          type: string
+          enum: [high, normal, low]
+          default: normal
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        template_id:
+          type: string
+          format: uuid
+          nullable: true
+        template_variables:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    CreateBatchRequest:
+      type: object
+      required: [notifications]
+      properties:
+        notifications:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/CreateNotificationRequest'
+
+    NotificationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+        channel:
+          type: string
+        recipient:
+          type: string
+        content:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+          enum: [pending, scheduled, processing, delivered, failed, cancelled]
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        failed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        retry_count:
+          type: integer
+        max_retries:
+          type: integer
+        provider_message_id:
+          type: string
+          nullable: true
+        template_id:
+          type: string
+          format: uuid
+          nullable: true
+        template_variables:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BatchResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        total_count:
+          type: integer
+        pending_count:
+          type: integer
+        delivered_count:
+          type: integer
+        failed_count:
+          type: integer
+        cancelled_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    CreateBatchResponse:
+      type: object
+      properties:
+        batch:
+          $ref: '#/components/schemas/BatchResponse'
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationResponse'
+
+    CreateTemplateRequest:
+      type: object
+      required: [name, channel, body]
+      properties:
+        name:
+          type: string
+          example: welcome_sms
+        channel:
+          type: string
+          enum: [sms, email, push]
+        body:
+          type: string
+          example: "Hello {{.Name}}, welcome to our platform!"
+
+    TemplateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        channel:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MetricsSnapshot:
+      type: object
+      properties:
+        channels:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              sent:
+                type: integer
+              failed:
+                type: integer
+              avg_latency_ms:
+                type: number
+              success_rate:
+                type: number
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
